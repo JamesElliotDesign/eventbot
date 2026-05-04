@@ -1,0 +1,19 @@
+{
+  "name": "hacksaw-event-bot",
+  "version": "1.0.0",
+  "description": "Discord event promotion bot for the Hacksaw DayZ server.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "register": "node src/commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
