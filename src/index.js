@@ -97,6 +97,24 @@ function eventOptions() {
   return templates.map((t) => ({ label: t.title.slice(0, 100), value: t.threadId }));
 }
 
+function upcomingScheduledEvents(limit = 25) {
+  const now = new Date();
+
+  return storage.read().events
+    .filter((event) => event.status === 'scheduled')
+    .filter((event) => new Date(event.eventDateTimeUtc) >= now)
+    .sort((a, b) => new Date(a.eventDateTimeUtc) - new Date(b.eventDateTimeUtc))
+    .slice(0, limit);
+}
+
+function promoUpcomingOptions() {
+  return upcomingScheduledEvents(25).map((event) => ({
+    label: event.title.slice(0, 100),
+    description: formatDate(event.eventDateTimeUtc).slice(0, 100),
+    value: event.id,
+  }));
+}
+
 async function handleSetup(interaction) {
   let didDefer = false;
   let templates = validTemplates();
@@ -239,12 +257,43 @@ async function handleCommand(interaction) {
 
   if (sub === 'promo-now') {
     const db = storage.read();
-    const event = db.events.filter((e) => e.status === 'scheduled').sort((a, b) => new Date(a.eventDateTimeUtc) - new Date(b.eventDateTimeUtc))[0];
+    const event = db.events
+      .filter((e) => e.status === 'scheduled')
+      .filter((e) => new Date(e.eventDateTimeUtc) >= new Date())
+      .sort((a, b) => new Date(a.eventDateTimeUtc) - new Date(b.eventDateTimeUtc))[0];
+
     if (!event) return interaction.reply({ content: 'No scheduled event found to promote.', ephemeral: true });
+
     await interaction.deferReply({ ephemeral: true });
     await promoteEvent(client, event, 'manual');
     await interaction.editReply(`Promoted **${event.title}** in the promo channel.`);
     await logAdmin(`📣 Manual promo posted by <@${interaction.user.id}> for **${event.title}**.`);
+    return;
+  }
+
+  if (sub === 'promo-upcoming') {
+    const events = upcomingScheduledEvents(25);
+
+    if (!events.length) {
+      return interaction.reply({ content: 'No upcoming scheduled events found to promote.', ephemeral: true });
+    }
+
+    const sessionId = `${interaction.user.id}_${Date.now()}`;
+    sessions.set(sessionId, { userId: interaction.user.id, type: 'promo-upcoming' });
+
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`promo_select_${sessionId}`)
+        .setPlaceholder('Choose an upcoming event to promote now')
+        .addOptions(promoUpcomingOptions())
+    );
+
+    await interaction.reply({
+      content: 'Choose which upcoming event you want to promote now:',
+      components: [row],
+      ephemeral: true,
+    });
+
     return;
   }
 
@@ -280,6 +329,39 @@ async function handleSelect(interaction) {
   sessions.set(sessionId, session);
 
   await interaction.update({ content: `Selected **${template.title}**. Choose the event date:`, components: [dateButtons(sessionId)], embeds: [] });
+}
+
+async function handlePromoSelect(interaction) {
+  const sessionId = interaction.customId.replace('promo_select_', '');
+  const session = getSession(interaction, sessionId);
+
+  if (!session || session.type !== 'promo-upcoming') {
+    return interaction.reply({ content: 'This promo session has expired or belongs to another admin.', ephemeral: true });
+  }
+
+  const eventId = interaction.values[0];
+  const event = upcomingScheduledEvents(25).find((candidate) => candidate.id === eventId);
+
+  if (!event) {
+    sessions.delete(sessionId);
+    return interaction.update({
+      content: 'That event is no longer available to promote.',
+      components: [],
+    });
+  }
+
+  await interaction.deferUpdate();
+
+  await promoteEvent(client, event, 'manual-upcoming');
+
+  sessions.delete(sessionId);
+
+  await interaction.editReply({
+    content: `Promoted **${event.title}** in the promo channel.`,
+    components: [],
+  });
+
+  await logAdmin(`📣 Manual upcoming promo posted by <@${interaction.user.id}> for **${event.title}**.`);
 }
 
 async function handleButton(interaction) {
@@ -416,6 +498,7 @@ client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand() && interaction.commandName === 'event') return handleCommand(interaction);
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('setup_select_')) return handleSelect(interaction);
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('promo_select_')) return handlePromoSelect(interaction);
     if (interaction.isButton()) return handleButton(interaction);
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_')) return handleModal(interaction);
   } catch (error) {

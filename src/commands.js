@@ -8,6 +8,7 @@ const commands = [
     .addSubcommand((s) => s.setName('setup').setDescription('Start the event setup wizard'))
     .addSubcommand((s) => s.setName('list').setDescription('Show active and scheduled events'))
     .addSubcommand((s) => s.setName('promo-now').setDescription('Promote the next scheduled event now'))
+    .addSubcommand((s) => s.setName('promo-upcoming').setDescription('Choose an upcoming event to promote now'))
     .addSubcommand((s) => s.setName('promo-pause').setDescription('Pause automatic event promotions'))
     .addSubcommand((s) => s.setName('promo-resume').setDescription('Resume automatic event promotions'))
     .addSubcommand((s) => s.setName('promo-status').setDescription('Show promotion status'))
