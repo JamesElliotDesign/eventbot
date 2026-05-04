@@ -3,24 +3,51 @@ const config = require('./config');
 const storage = require('./storage');
 const { parseSectionedPost } = require('./parser');
 
-async function fetchStarterMessage(thread) {
-  if (typeof thread.fetchStarterMessage === 'function') {
-    return thread.fetchStarterMessage();
-  }
-  const messages = await thread.messages.fetch({ limit: 1, after: '0' });
-  return messages.first();
+async function fetchThreadMessages(thread) {
+  const messages = await thread.messages.fetch({ limit: 100 });
+  return [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 }
 
-function attachmentImageUrl(message) {
+function imageUrlFromMessage(message) {
   const attachment = message.attachments.find((a) => {
     const type = a.contentType || '';
     return type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(a.name || a.url || '');
   });
-  return attachment?.url || null;
+
+  if (attachment?.url) return attachment.url;
+
+  const embedWithImage = message.embeds.find((embed) => {
+    return embed.image?.url || embed.thumbnail?.url;
+  });
+
+  if (embedWithImage?.image?.url) return embedWithImage.image.url;
+  if (embedWithImage?.thumbnail?.url) return embedWithImage.thumbnail.url;
+
+  const imageLinkMatch = (message.content || '').match(/https?:\/\/\S+\.(png|jpe?g|gif|webp)(\?\S*)?/i);
+  if (imageLinkMatch) return imageLinkMatch[0];
+
+  return null;
+}
+
+function imageUrlFromMessages(messages) {
+  for (const message of messages) {
+    const imageUrl = imageUrlFromMessage(message);
+    if (imageUrl) return imageUrl;
+  }
+
+  return null;
+}
+
+function combinedThreadContent(messages) {
+  return messages
+    .map((message) => message.content || '')
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 async function refreshTemplates(client) {
   const forum = await client.channels.fetch(config.templateForumChannelId);
+
   if (!forum || forum.type !== ChannelType.GuildForum) {
     throw new Error('TEMPLATE_FORUM_CHANNEL_ID must point to a Discord forum channel.');
   }
@@ -33,9 +60,12 @@ async function refreshTemplates(client) {
   for (const thread of threads) {
     try {
       const fullThread = await thread.fetch();
-      const starter = await fetchStarterMessage(fullThread);
-      if (!starter) continue;
-      const parsed = parseSectionedPost(starter.content || '');
+      const messages = await fetchThreadMessages(fullThread);
+
+      const content = combinedThreadContent(messages);
+      const parsed = parseSectionedPost(content);
+      const imageUrl = imageUrlFromMessages(messages);
+
       templates.push({
         threadId: fullThread.id,
         title: fullThread.name,
@@ -43,7 +73,7 @@ async function refreshTemplates(client) {
         rules: parsed.rules,
         rewards: parsed.rewards,
         missing: parsed.missing,
-        imageUrl: attachmentImageUrl(starter),
+        imageUrl,
         sourceUrl: `https://discord.com/channels/${config.guildId}/${fullThread.id}`,
         lastSyncedAt: new Date().toISOString(),
       });
