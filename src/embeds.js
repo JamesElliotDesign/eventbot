@@ -41,7 +41,22 @@ function eventEmbed(event, options = {}) {
   return embed;
 }
 
-function promoEmbed(event) {
+function otherWeekendEventsField(otherEvents = []) {
+  if (!otherEvents.length) return null;
+
+  const lines = otherEvents
+    .slice(0, 5)
+    .map((event) => {
+      return `• **${event.title}** — ${discordTimestamp(event.eventDateTimeUtc, 'F')} — Host: <@${event.hostUserId}>`;
+    });
+
+  return {
+    name: 'Other weekend events',
+    value: lines.join('\n'),
+  };
+}
+
+function promoEmbed(event, otherEvents = []) {
   const shortDescription = (event.description || '').slice(0, 500);
   const embed = new EmbedBuilder()
     .setTitle(`🔥 This Weekend on Hacksaw: ${event.title}`)
@@ -59,6 +74,9 @@ function promoEmbed(event) {
         : 'Full description, rules, and rewards are in the event announcement.'
     })
     .setTimestamp(new Date());
+
+  const otherEventsField = otherWeekendEventsField(otherEvents);
+  if (otherEventsField) embed.addFields(otherEventsField);
 
   if (event.imageUrl) embed.setImage(event.imageUrl);
   return embed;
