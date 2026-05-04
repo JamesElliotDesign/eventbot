@@ -3,7 +3,7 @@ const { EmbedBuilder } = require('discord.js');
 function formatDate(iso) {
   const date = new Date(iso);
   return date.toLocaleString('en-GB', {
-    timeZone: 'UTC',
+    timeZone: 'Europe/London',
     weekday: 'long',
     day: '2-digit',
     month: 'long',
@@ -11,7 +11,7 @@ function formatDate(iso) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  }).replace(',', '') + ' GMT';
+  }).replace(',', '') + ' UK time';
 }
 
 function discordTimestamp(iso, style = 'F') {
@@ -24,7 +24,7 @@ function eventEmbed(event, options = {}) {
     .setTitle(`🔥 Hacksaw Event: ${event.title}`)
     .setDescription(
       `**Event Time:** ${discordTimestamp(event.eventDateTimeUtc, 'F')}\n` +
-      `**Server Time:** ${formatDate(event.eventDateTimeUtc)}\n` +
+      `**UK Time:** ${formatDate(event.eventDateTimeUtc)}\n` +
       `**Starts:** ${discordTimestamp(event.eventDateTimeUtc, 'R')}\n` +
       `**Event Host:** <@${event.hostUserId}>`
     )
@@ -47,7 +47,7 @@ function promoEmbed(event) {
     .setTitle(`🔥 This Weekend on Hacksaw: ${event.title}`)
     .setDescription(
       `**Event Time:** ${discordTimestamp(event.eventDateTimeUtc, 'F')}\n` +
-      `**Server Time:** ${formatDate(event.eventDateTimeUtc)}\n` +
+      `**UK Time:** ${formatDate(event.eventDateTimeUtc)}\n` +
       `**Starts:** ${discordTimestamp(event.eventDateTimeUtc, 'R')}\n` +
       `**Host:** <@${event.hostUserId}>\n\n` +
       `${shortDescription}`
@@ -59,6 +59,7 @@ function promoEmbed(event) {
         : 'Full description, rules, and rewards are in the event announcement.'
     })
     .setTimestamp(new Date());
+
   if (event.imageUrl) embed.setImage(event.imageUrl);
   return embed;
 }

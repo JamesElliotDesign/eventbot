@@ -52,9 +52,44 @@ function nextWeekdayDate(targetDay, addWeek = false) {
   return result;
 }
 
+function getUkOffsetMinutes(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    timeZoneName: 'shortOffset',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const tzName = parts.find((part) => part.type === 'timeZoneName')?.value || 'GMT';
+  const match = tzName.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/);
+
+  if (!match) return 0;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2] || 0);
+  return hours * 60 + Math.sign(hours) * minutes;
+}
+
 function combineDateAndTime(date, time) {
   const [hours, minutes] = time.split(':').map(Number);
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hours, minutes, 0)).toISOString();
+
+  // Admin enters UK local time. The bot stores the exact UTC instant.
+  // This automatically accounts for GMT/BST depending on the selected date.
+  const guessedUtc = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    hours,
+    minutes,
+    0
+  ));
+
+  const ukOffsetMinutes = getUkOffsetMinutes(guessedUtc);
+  return new Date(guessedUtc.getTime() - ukOffsetMinutes * 60 * 1000).toISOString();
 }
 
 function eventOptions() {
@@ -102,9 +137,9 @@ function dateButtons(sessionId) {
 
 function timeButtons(sessionId) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`time_1800_${sessionId}`).setLabel('18:00 GMT').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`time_2100_${sessionId}`).setLabel('21:00 GMT').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`time_0000_${sessionId}`).setLabel('00:00 GMT').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`time_1800_${sessionId}`).setLabel('18:00 UK time').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`time_2100_${sessionId}`).setLabel('21:00 UK time').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`time_0000_${sessionId}`).setLabel('00:00 UK time').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`time_custom_${sessionId}`).setLabel('Custom Time').setStyle(ButtonStyle.Secondary),
   );
 }
@@ -127,6 +162,7 @@ async function showPreview(interaction, sessionId) {
   const session = sessions.get(sessionId);
   const event = {
     id: 'preview',
+    templateThreadId: session.template.threadId,
     title: session.template.title,
     description: session.template.description,
     rules: session.template.rules,
@@ -257,10 +293,20 @@ async function handleButton(interaction) {
   if (type === 'date') {
     if (value === 'custom') {
       const modal = new ModalBuilder().setCustomId(`modal_date_${sessionId}`).setTitle('Custom event date');
-      modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('date').setLabel('Date in YYYY-MM-DD, GMT/UTC').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('2026-05-09')));
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('date')
+            .setLabel('Date in YYYY-MM-DD')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setPlaceholder('2026-05-09')
+        )
+      );
       await interaction.showModal(modal);
       return;
     }
+
     session.date = value === 'sun' ? nextWeekdayDate(0) : nextWeekdayDate(6, value === 'nextsat');
     sessions.set(sessionId, session);
     await interaction.update({ content: 'Choose the event start time:', components: [timeButtons(sessionId)] });
@@ -270,10 +316,20 @@ async function handleButton(interaction) {
   if (type === 'time') {
     if (value === 'custom') {
       const modal = new ModalBuilder().setCustomId(`modal_time_${sessionId}`).setTitle('Custom event time');
-      modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('time').setLabel('Time in HH:mm, GMT/UTC').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('20:30')));
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('time')
+            .setLabel('Time in HH:mm, UK time')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setPlaceholder('20:30')
+        )
+      );
       await interaction.showModal(modal);
       return;
     }
+
     const time = value === '1800' ? '18:00' : value === '2100' ? '21:00' : '00:00';
     session.time = time;
     session.eventDateTimeUtc = combineDateAndTime(session.date, session.time);
@@ -331,6 +387,7 @@ async function handleModal(interaction) {
     const value = interaction.fields.getTextInputValue('date');
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) return interaction.reply({ content: 'Invalid date. Use YYYY-MM-DD.', ephemeral: true });
+
     session.date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0));
     sessions.set(sessionId, session);
     await interaction.reply({ content: 'Date saved. Choose the event start time:', components: [timeButtons(sessionId)], ephemeral: true });
@@ -339,7 +396,10 @@ async function handleModal(interaction) {
 
   if (modalType === 'time') {
     const value = interaction.fields.getTextInputValue('time');
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return interaction.reply({ content: 'Invalid time. Use HH:mm in 24-hour GMT/UTC format.', ephemeral: true });
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+      return interaction.reply({ content: 'Invalid time. Use HH:mm in 24-hour UK time format.', ephemeral: true });
+    }
+
     session.time = value;
     session.eventDateTimeUtc = combineDateAndTime(session.date, session.time);
     sessions.set(sessionId, session);
