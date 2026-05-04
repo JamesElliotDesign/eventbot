@@ -14,10 +14,20 @@ function formatDate(iso) {
   }).replace(',', '') + ' GMT';
 }
 
+function discordTimestamp(iso, style = 'F') {
+  const unixSeconds = Math.floor(new Date(iso).getTime() / 1000);
+  return `<t:${unixSeconds}:${style}>`;
+}
+
 function eventEmbed(event, options = {}) {
   const embed = new EmbedBuilder()
     .setTitle(`🔥 Hacksaw Event: ${event.title}`)
-    .setDescription(`**Date:** ${formatDate(event.eventDateTimeUtc)}\n**Event Host:** <@${event.hostUserId}>`)
+    .setDescription(
+      `**Event Time:** ${discordTimestamp(event.eventDateTimeUtc, 'F')}\n` +
+      `**Server Time:** ${formatDate(event.eventDateTimeUtc)}\n` +
+      `**Starts:** ${discordTimestamp(event.eventDateTimeUtc, 'R')}\n` +
+      `**Event Host:** <@${event.hostUserId}>`
+    )
     .addFields(
       { name: 'Description', value: event.description || 'No description provided.' },
       { name: 'Rules', value: event.rules || 'No rules provided.' },
@@ -35,8 +45,19 @@ function promoEmbed(event) {
   const shortDescription = (event.description || '').slice(0, 500);
   const embed = new EmbedBuilder()
     .setTitle(`🔥 This Weekend on Hacksaw: ${event.title}`)
-    .setDescription(`**Date:** ${formatDate(event.eventDateTimeUtc)}\n**Host:** <@${event.hostUserId}>\n\n${shortDescription}`)
-    .addFields({ name: 'Event details', value: 'Full description, rules, and rewards here https://discord.com/channels/1217816664268083220/1500582183767769278.' })
+    .setDescription(
+      `**Event Time:** ${discordTimestamp(event.eventDateTimeUtc, 'F')}\n` +
+      `**Server Time:** ${formatDate(event.eventDateTimeUtc)}\n` +
+      `**Starts:** ${discordTimestamp(event.eventDateTimeUtc, 'R')}\n` +
+      `**Host:** <@${event.hostUserId}>\n\n` +
+      `${shortDescription}`
+    )
+    .addFields({
+      name: 'Event details',
+      value: event.templateThreadId
+        ? `Full description, rules, and rewards here: https://discord.com/channels/1217816664268083220/${event.templateThreadId}`
+        : 'Full description, rules, and rewards are in the event announcement.'
+    })
     .setTimestamp(new Date());
   if (event.imageUrl) embed.setImage(event.imageUrl);
   return embed;
@@ -45,7 +66,7 @@ function promoEmbed(event) {
 function statusEmbed(db) {
   const active = db.events.filter((e) => ['scheduled', 'active'].includes(e.status));
   const lines = active.length
-    ? active.map((e, i) => `${i + 1}. **${e.title}** — ${formatDate(e.eventDateTimeUtc)} — Host: <@${e.hostUserId}> — Promos: ${e.promoPaused ? 'paused' : 'active'} — Repeat: ${e.repeatWeekly ? 'yes' : 'no'}`).join('\n')
+    ? active.map((e, i) => `${i + 1}. **${e.title}** — ${discordTimestamp(e.eventDateTimeUtc, 'F')} — Host: <@${e.hostUserId}> — Promos: ${e.promoPaused ? 'paused' : 'active'} — Repeat: ${e.repeatWeekly ? 'yes' : 'no'}`).join('\n')
     : 'No active or scheduled events.';
 
   return new EmbedBuilder()
@@ -55,4 +76,4 @@ function statusEmbed(db) {
     .setTimestamp(new Date());
 }
 
-module.exports = { eventEmbed, promoEmbed, statusEmbed, formatDate };
+module.exports = { eventEmbed, promoEmbed, statusEmbed, formatDate, discordTimestamp };
